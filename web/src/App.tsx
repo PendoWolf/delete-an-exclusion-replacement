@@ -10,6 +10,10 @@ function trackEvent(name: string) {
   }
 }
 
+// Module-level guard so "App state loaded" fires once per page load, even when
+// StrictMode runs the mount effect twice in development.
+let appStateLoadedTracked = false;
+
 export default function App() {
   const [state, setState] = useState<AppState>({ counter: 0, lastAction: "none" });
   const [error, setError] = useState<string | null>(null);
@@ -17,10 +21,25 @@ export default function App() {
   const run = async (name: string, fn: () => Promise<AppState>) => {
     try {
       setError(null);
-      setState(await fn());
+      const next = await fn();
+      setState(next);
       trackEvent(name);
+      // Pendo Track Event: initial state fetched from the server on page load.
+      if (name === "load" && !appStateLoadedTracked) {
+        appStateLoadedTracked = true;
+        window.pendo?.track?.("App state loaded", {
+          counter_value: next.counter,
+          last_action: next.lastAction,
+        });
+      }
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setError(message);
+      // Pendo Track Event: an API call failed and the error message is shown.
+      window.pendo?.track?.("Action failed", {
+        action: name,
+        error_message: message.substring(0, 100),
+      });
     }
   };
 
